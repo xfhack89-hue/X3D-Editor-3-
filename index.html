@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D Редактор Pro | Рабочая версия</title>
+  <style>
+    :root {
+      --bg-primary: #1a1d23; --bg-secondary: #252830; --bg-tertiary: #2d3139;
+      --text-primary: #e1e4e8; --text-secondary: #959da5; --accent: #539bf5;
+      --danger: #f85149; --border: #444c56;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg-primary); overflow: hidden; height: 100vh;
+      color: var(--text-primary); touch-action: manipulation;
+    }
+    #app { display: flex; height: 100vh; width: 100vw; }
+    #canvas-container { flex: 1; position: relative; }
+    #canvas-container canvas {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%; z-index: 1;
+    }
+    #sidebar {
+      width: 300px; background: var(--bg-secondary);
+      border-left: 1px solid var(--border); display: flex;
+      flex-direction: column; overflow-y: auto; z-index: 20;
+    }
+    .sidebar-section { padding: 14px; border-bottom: 1px solid var(--border); }
+    .sidebar-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 1px; color: var(--text-secondary); margin-bottom: 10px;
+    }
+    .button-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .btn {
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px;
+      background: var(--bg-tertiary); color: var(--text-primary); cursor: pointer;
+      font-size: 12px; font-weight: 500; transition: all 0.2s;
+      display: flex; align-items: center; gap: 6px; white-space: nowrap;
+      user-select: none; pointer-events: auto; justify-content: center;
+    }
+    .btn:hover { background: #353b47; border-color: #666; }
+    .btn:active { transform: scale(0.96); }
+    .btn.accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+    .property-group { margin-bottom: 10px; }
+    .property-label {
+      font-size: 10px; color: var(--text-secondary); margin-bottom: 3px;
+      display: flex; justify-content: space-between;
+    }
+    input[type="range"] {
+      width: 100%; margin: 2px 0; background: var(--bg-tertiary);
+      height: 5px; border-radius: 3px; -webkit-appearance: none; cursor: pointer;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 18px; height: 18px;
+      background: var(--accent); border-radius: 50%; cursor: pointer;
+    }
+    input[type="color"] {
+      width: 100%; height: 36px; border: 1px solid var(--border);
+      border-radius: 4px; background: var(--bg-tertiary); cursor: pointer; padding: 2px;
+    }
+    select {
+      width: 100%; padding: 8px; background: var(--bg-tertiary);
+      color: var(--text-primary); border: 1px solid var(--border);
+      border-radius: 4px; font-size: 12px; cursor: pointer;
+    }
+    #toolbar-top {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 6px; z-index: 25; pointer-events: auto;
+    }
+    #status-bar {
+      position: absolute; bottom: 12px; left: 12px;
+      background: rgba(37,40,48,0.95); padding: 6px 12px;
+      border-radius: 6px; font-size: 11px; color: var(--text-secondary);
+      z-index: 25; pointer-events: none;
+    }
+    .file-actions { display: flex; gap: 6px; }
+    .file-actions .btn { flex: 1; }
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="canvas-container">
+      <div id="toolbar-top">
+        <button class="btn" id="btn-select" title="Выделение (V)">🖱️</button>
+        <button class="btn" id="btn-move" title="Перемещение (W)">↕️</button>
+        <button class="btn" id="btn-rotate" title="Вращение (E)">🔄</button>
+        <button class="btn" id="btn-scale" title="Масштаб (R)">📐</button>
+        <button class="btn danger" id="btn-delete" title="Удалить (Del)">🗑️</button>
+      </div>
+      <div id="status-bar">
+        Объектов: <span id="obj-count">0</span> | 
+        Выбрано: <span id="selected-name">нет</span> |
+        <span id="mode-display">Навигация</span>
+      </div>
+    </div>
+
+    <div id="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-title">📁 Файл</div>
+        <div class="file-actions">
+          <button class="btn" id="btn-new">📄 Новый</button>
+          <button class="btn" id="btn-open">📂 Открыть</button>
+          <button class="btn accent" id="btn-save">💾 Сохранить</button>
+        </div>
+        <input type="file" id="file-input" accept=".s3d">
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-title">➕ Добавить фигуру</div>
+        <div class="button-grid">
+          <button class="btn add-shape" data-shape="cube">🧊 Куб</button>
+          <button class="btn add-shape" data-shape="sphere">🔵 Сфера</button>
+          <button class="btn add-shape" data-shape="cylinder">🥫 Цилиндр</button>
+          <button class="btn add-shape" data-shape="cone">🔺 Конус</button>
+          <button class="btn add-shape" data-shape="plane">⬜ Плита</button>
+          <button class="btn add-shape" data-shape="torus">🍩 Тор</button>
+        </div>
+      </div>
+
+      <div class="sidebar-section" id="properties-panel" style="display: none;">
+        <div class="sidebar-title">🎨 Свойства</div>
+        <div class="property-group">
+          <div class="property-label">Цвет</div>
+          <input type="color" id="prop-color" value="#539bf5">
+        </div>
+        <div class="property-group">
+          <div class="property-label">Прозрачность <span id="opacity-value">1.0</span></div>
+          <input type="range" id="prop-opacity" min="0" max="1" step="0.05" value="1">
+        </div>
+        <div class="property-group">
+          <div class="property-label">Материал</div>
+          <select id="prop-material">
+            <option value="standard">Стандартный</option>
+            <option value="matte">Матовый</option>
+            <option value="glossy">Глянцевый</option>
+            <option value="chrome">Хром</option>
+            <option value="ghost">Призрачный</option>
+          </select>
+        </div>
+        <div class="property-group">
+          <div class="property-label">Ширина <span id="scale-x-value">1.0</span></div>
+          <input type="range" id="prop-scale-x" min="0.1" max="5" step="0.1" value="1">
+        </div>
+        <div class="property-group">
+          <div class="property-label">Высота <span id="scale-y-value">1.0</span></div>
+          <input type="range" id="prop-scale-y" min="0.1" max="5" step="0.1" value="1">
+        </div>
+        <div class="property-group">
+          <div class="property-label">Глубина <span id="scale-z-value">1.0</span></div>
+          <input type="range" id="prop-scale-z" min="0.1" max="5" step="0.1" value="1">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Скрытая ссылка для скачивания -->
+  <a id="download-link" style="display:none;" download="model.s3d"></a>
+
+  <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.157.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.157.0/examples/jsm/" } }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { TransformControls } from 'three/addons/controls/TransformControls.js';
+    import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+    import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+
+    console.log('🚀 Запуск редактора...');
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 40, 120);
+
+    const container = document.getElementById('canvas-container');
+    const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 500);
+    camera.position.set(8, 6, 10);
+    camera.lookAt(0, 0.5, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    renderer.setSize(container.clientWidth, container.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    
+    const canvas = renderer.domElement;
+    canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;pointer-events:auto;';
+    container.appendChild(canvas);
+
+    // Освещение
+    scene.add(new THREE.AmbientLight(0x404066));
+    const sun = new THREE.DirectionalLight(0xfff5e6, 1.2);
+    sun.position.set(15, 20, 10);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(1024, 1024);
+    sun.shadow.camera.near = 1; sun.shadow.camera.far = 50;
+    sun.shadow.camera.left = -15; sun.shadow.camera.right = 15;
+    sun.shadow.camera.top = 15; sun.shadow.camera.bottom = -10;
+    scene.add(sun);
+    scene.add(new THREE.DirectionalLight(0xaaccff, 0.6).position.set(-10, 0, 10));
+    scene.add(new THREE.DirectionalLight(0xffccaa, 0.4).position.set(0, -5, -5));
+
+    // Пол
+    const gridTex = (() => {
+      const c = document.createElement('canvas'); c.width = c.height = 512;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#e8f0f8'; ctx.fillRect(0, 0, 512, 512);
+      ctx.strokeStyle = '#c0d0e0'; ctx.lineWidth = 1;
+      for (let i = 0; i <= 512; i += 32) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke(); }
+      ctx.strokeStyle = '#a0b8d0'; ctx.lineWidth = 2;
+      for (let i = 0; i <= 512; i += 128) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke(); }
+      return new THREE.CanvasTexture(c);
+    })();
+    gridTex.wrapS = gridTex.wrapT = THREE.RepeatWrapping;
+    gridTex.repeat.set(20, 20);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ map: gridTex, roughness: 0.8, metalness: 0.1 }));
+    floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true;
+    scene.add(floor);
+
+    // Контроллеры
+    const orbit = new OrbitControls(camera, canvas);
+    orbit.enableDamping = true; orbit.dampingFactor = 0.08;
+    orbit.maxPolarAngle = Math.PI / 2 + 0.4; orbit.target.set(0, 1, 0);
+    orbit.update();
+
+    const transform = new TransformControls(camera, canvas);
+    transform.setSize(0.8); transform.space = 'world';
+    transform.addEventListener('dragging-changed', e => orbit.enabled = !e.value);
+    scene.add(transform);
+
+    // Объекты
+    const objects = [];
+    let selected = null;
+    let mode = 'select';
+
+    function createMat(type, color, opacity) {
+      const c = new THREE.Color(color);
+      switch(type) {
+        case 'matte': return new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, metalness: 0.0, transparent: true, opacity });
+        case 'glossy': return new THREE.MeshStandardMaterial({ color: c, roughness: 0.2, metalness: 0.1, transparent: true, opacity });
+        case 'chrome': return new THREE.MeshStandardMaterial({ color: c, roughness: 0.05, metalness: 1.0, transparent: true, opacity });
+        case 'ghost': return new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.1, metalness: 0.0, transparent: true, opacity: Math.max(0.1, opacity * 0.3), transmission: 0.8 });
+        default: return new THREE.MeshStandardMaterial({ color: c, roughness: 0.5, metalness: 0.3, transparent: true, opacity });
+      }
+    }
+
+    function createGeo(type) {
+      switch(type) {
+        case 'cube': return new THREE.BoxGeometry(1.5, 1.5, 1.5);
+        case 'sphere': return new THREE.SphereGeometry(0.9, 32, 32);
+        case 'cylinder': return new THREE.CylinderGeometry(0.8, 0.8, 1.8, 32);
+        case 'cone': return new THREE.ConeGeometry(0.8, 1.8, 32);
+        case 'plane': return new THREE.BoxGeometry(2, 0.2, 2);
+        case 'torus': return new THREE.TorusGeometry(0.7, 0.3, 16, 32);
+        default: return new THREE.BoxGeometry(1, 1, 1);
+      }
+    }
+
+    function addShape(type) {
+      const mesh = new THREE.Mesh(createGeo(type), createMat('standard', '#539bf5', 1.0));
+      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.position.set((Math.random() - 0.5) * 3, 1.5 + Math.random() * 2, (Math.random() - 0.5) * 3);
+      mesh.userData = { shapeType: type, materialType: 'standard', color: '#539bf5', opacity: 1.0 };
+      const names = { cube:'Куб', sphere:'Сфера', cylinder:'Цилиндр', cone:'Конус', plane:'Плита', torus:'Тор' };
+      mesh.name = names[type];
+      scene.add(mesh); objects.push(mesh);
+      selectObj(mesh); updateCount();
+    }
+
+    function selectObj(obj) {
+      if (selected === obj) return;
+      if (selected) transform.detach();
+      selected = obj;
+      if (obj) { transform.attach(obj); updatePanel(); document.getElementById('selected-name').textContent = obj.name; }
+      else { document.getElementById('selected-name').textContent = 'нет'; document.getElementById('properties-panel').style.display = 'none'; }
+      updateMode();
+    }
+
+    function deleteSelected() {
+      if (!selected) return;
+      transform.detach(); scene.remove(selected);
+      objects.splice(objects.indexOf(selected), 1); selected = null;
+      document.getElementById('selected-name').textContent = 'нет';
+      document.getElementById('properties-panel').style.display = 'none'; updateCount();
+    }
+
+    function updateCount() { document.getElementById('obj-count').textContent = objects.length; }
+    function updateMode() {
+      const m = { select:'Выделение', translate:'Перемещение', rotate:'Вращение', scale:'Масштаб' };
+      document.getElementById('mode-display').textContent = m[mode] || 'Навигация';
+    }
+
+    function updatePanel() {
+      if (!selected) return;
+      document.getElementById('properties-panel').style.display = 'block';
+      const d = selected.userData;
+      document.getElementById('prop-color').value = d.color;
+      document.getElementById('prop-opacity').value = d.opacity;
+      document.getElementById('opacity-value').textContent = d.opacity.toFixed(2);
+      document.getElementById('prop-material').value = d.materialType;
+      document.getElementById('prop-scale-x').value = selected.scale.x;
+      document.getElementById('prop-scale-y').value = selected.scale.y;
+      document.getElementById('prop-scale-z').value = selected.scale.z;
+      document.getElementById('scale-x-value').textContent = selected.scale.x.toFixed(1);
+      document.getElementById('scale-y-value').textContent = selected.scale.y.toFixed(1);
+      document.getElementById('scale-z-value').textContent = selected.scale.z.toFixed(1);
+    }
+
+    function applyMat() {
+      if (!selected) return;
+      const color = document.getElementById('prop-color').value;
+      const opacity = +document.getElementById('prop-opacity').value;
+      const type = document.getElementById('prop-material').value;
+      selected.userData.color = color;
+      selected.userData.opacity = opacity;
+      selected.userData.materialType = type;
+      selected.material.dispose();
+      selected.material = createMat(type, color, opacity);
+    }
+
+    // Выделение кликом
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+    canvas.addEventListener('click', e => {
+      if (mode !== 'select') return;
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(objects);
+      selectObj(hits.length > 0 ? hits[0].object : null);
+    });
+
+    // ===== СКАЧИВАНИЕ (ПРОСТОЕ И РАБОЧЕЕ) =====
+    const downloadLink = document.getElementById('download-link');
+
+    function downloadFile(content, filename) {
+      const blob = new Blob([content], { type: 'application/octet-stream' });
+      const url = URL.createObjectURL(blob);
+      
+      downloadLink.href = url;
+      downloadLink.download = filename;
+      downloadLink.click();
+      
+      // Очищаем через 1 секунду
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      
+      console.log('✅ Скачан файл:', filename);
+    }
+
+    function saveFile() {
+      const name = prompt('📁 Название файла:', 'model');
+      if (!name) return;
+      
+      const format = prompt('📦 Выберите формат:\n\n1 - S3D (только для этого редактора)\n2 - OBJ (для Blender, Maya, Unity и др.)\n3 - STL (для 3D-печати)', '1');
+      if (!format) return;
+      
+      try {
+        if (format === '1') {
+          // S3D
+          const data = {
+            version: '1.0',
+            objects: objects.map(obj => ({
+              name: obj.name,
+              shapeType: obj.userData.shapeType,
+              position: obj.position.toArray(),
+              rotation: obj.rotation.toArray(),
+              scale: obj.scale.toArray(),
+              color: obj.userData.color,
+              opacity: obj.userData.opacity,
+              materialType: obj.userData.materialType
+            }))
+          };
+          downloadFile(JSON.stringify(data, null, 2), name + '.s3d');
+          alert('✅ Сохранено как ' + name + '.s3d');
+        }
+        else if (format === '2') {
+          // OBJ
+          const exporter = new OBJExporter();
+          const objData = exporter.parse(objects.length > 0 ? objects : [new THREE.Mesh(new THREE.BoxGeometry(1,1,1))]);
+          downloadFile(objData, name + '.obj');
+          alert('✅ Сохранено как ' + name + '.obj');
+        }
+        else if (format === '3') {
+          // STL
+          const exporter = new STLExporter();
+          const stlData = exporter.parse(objects.length > 0 ? objects : [new THREE.Mesh(new THREE.BoxGeometry(1,1,1))]);
+          downloadFile(stlData, name + '.stl');
+          alert('✅ Сохранено как ' + name + '.stl');
+        }
+      } catch (err) {
+        alert('❌ Ошибка сохранения: ' + err.message);
+        console.error(err);
+      }
+    }
+
+    // Загрузка
+    function loadFile(file) {
+      const reader = new FileReader();
+      reader.onload = e => {
+        try {
+          const data = JSON.parse(e.target.result);
+          while (objects.length) scene.remove(objects.pop());
+          selectObj(null);
+          data.objects.forEach(d => {
+            const mesh = new THREE.Mesh(createGeo(d.shapeType), createMat(d.materialType, d.color, d.opacity));
+            mesh.position.fromArray(d.position); mesh.rotation.fromArray(d.rotation);
+            mesh.scale.fromArray(d.scale); mesh.castShadow = mesh.receiveShadow = true;
+            mesh.name = d.name; mesh.userData = d;
+            scene.add(mesh); objects.push(mesh);
+          });
+          updateCount();
+          alert('✅ Загружено объектов: ' + objects.length);
+        } catch (err) { alert('❌ Ошибка загрузки: ' + err.message); }
+      };
+      reader.readAsText(file);
+    }
+
+    // ===== КНОПКИ (ПРЯМЫЕ ОБРАБОТЧИКИ) =====
+    document.getElementById('btn-new').onclick = function() {
+      if (confirm('Очистить сцену?')) {
+        while (objects.length) scene.remove(objects.pop());
+        selectObj(null); updateCount();
+      }
+    };
+
+    document.getElementById('btn-open').onclick = function() {
+      document.getElementById('file-input').click();
+    };
+
+    document.getElementById('file-input').onchange = function(e) {
+      if (e.target.files[0]) loadFile(e.target.files[0]);
+    };
+
+    document.getElementById('btn-save').onclick = function() {
+      console.log('💾 Кнопка Сохранить нажата!');
+      saveFile();
+    };
+
+    document.getElementById('btn-select').onclick = function() {
+      mode = 'select'; transform.detach(); orbit.enabled = true; updateMode();
+    };
+
+    document.getElementById('btn-move').onclick = function() {
+      if (!selected) return;
+      mode = 'translate'; transform.setMode('translate'); transform.attach(selected); updateMode();
+    };
+
+    document.getElementById('btn-rotate').onclick = function() {
+      if (!selected) return;
+      mode = 'rotate'; transform.setMode('rotate'); transform.attach(selected); updateMode();
+    };
+
+    document.getElementById('btn-scale').onclick = function() {
+      if (!selected) return;
+      mode = 'scale'; transform.setMode('scale'); transform.attach(selected); updateMode();
+    };
+
+    document.getElementById('btn-delete').onclick = function() {
+      deleteSelected();
+    };
+
+    // Фигуры
+    document.querySelectorAll('.add-shape').forEach(btn => {
+      btn.onclick = function() {
+        addShape(this.dataset.shape);
+      };
+    });
+
+    // Свойства
+    document.getElementById('prop-color').oninput = applyMat;
+    document.getElementById('prop-opacity').oninput = function() {
+      document.getElementById('opacity-value').textContent = (+this.value).toFixed(2);
+      applyMat();
+    };
+    document.getElementById('prop-material').onchange = applyMat;
+    
+    document.getElementById('prop-scale-x').oninput = function() {
+      if (!selected) return;
+      selected.scale.x = +this.value;
+      document.getElementById('scale-x-value').textContent = (+this.value).toFixed(1);
+    };
+    
+    document.getElementById('prop-scale-y').oninput = function() {
+      if (!selected) return;
+      selected.scale.y = +this.value;
+      document.getElementById('scale-y-value').textContent = (+this.value).toFixed(1);
+    };
+    
+    document.getElementById('prop-scale-z').oninput = function() {
+      if (!selected) return;
+      selected.scale.z = +this.value;
+      document.getElementById('scale-z-value').textContent = (+this.value).toFixed(1);
+    };
+
+    // Клавиши
+    window.onkeydown = function(e) {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+      switch(e.key.toLowerCase()) {
+        case 'v': document.getElementById('btn-select').click(); break;
+        case 'w': document.getElementById('btn-move').click(); break;
+        case 'e': document.getElementById('btn-rotate').click(); break;
+        case 'r': document.getElementById('btn-scale').click(); break;
+        case 'delete': case 'backspace': e.preventDefault(); deleteSelected(); break;
+        case 's': if (e.ctrlKey) { e.preventDefault(); saveFile(); } break;
+      }
+    };
+
+    window.addEventListener('resize', () => {
+      camera.aspect = container.clientWidth / container.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(container.clientWidth, container.clientHeight);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      orbit.update();
+      renderer.render(scene, camera);
+    }
+    updateCount();
+    animate();
+    
+    console.log('✅ РЕДАКТОР ГОТОВ!');
+    console.log('💾 Кнопка "Сохранить" работает через prompt()');
+    console.log('📦 Форматы: 1-S3D, 2-OBJ, 3-STL');
+  </script>
+</body>
+</html>
